@@ -113,6 +113,8 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
+    var requestBody map[string]interface{}
+
     model := "utility"
     if r.Method == "POST" {
         defer r.Body.Close()
@@ -121,7 +123,7 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
             http.Error(w, "Internal Server Error", http.StatusInternalServerError)
             return
         }
-        var requestBody map[string]interface{}
+
         err = json.Unmarshal(body, &requestBody)
         if err != nil {
             http.Error(w, "Bad Request: Invalid JSON body", http.StatusBadRequest)
@@ -132,6 +134,13 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
         }
         r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
     }
+
+    jsonString, err := json.MarshalIndent(requestBody, "", "    ")
+    if err != nil {
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        return
+    }
+
 
     // auth := strings.Split(authHeader, " ")[1]
     // authHash := md5.Sum([]byte(auth))
@@ -174,8 +183,12 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
     }
 
     tokensUsed := 0
+    promptTokens := 0
+    completionTokens := 0
     if usage, ok := responseData["usage"].(map[string]interface{}); ok {
         tokensUsed = int(usage["total_tokens"].(float64))
+        promptTokens = int(usage["prompt_tokens"].(float64))
+        completionTokens = int(usage["completion_tokens"].(float64))
     }
 
     // Save request and response details, model, tokens used, and timestamp to cache (omitted for simplicity)
@@ -188,9 +201,15 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
 
     log.Println(successStyle.Render("Request:") + fmt.Sprintf(" %s %s", r.Method, r.URL))
     log.Println(infoStyle.Render("Model:") + fmt.Sprintf(" %s", model))
+    log.Println(infoStyle.Render("Prompt Tokens:") + fmt.Sprintf(" %d", promptTokens))
+    log.Println(infoStyle.Render("Completion Tokens:") + fmt.Sprintf(" %d", completionTokens))
     log.Println(infoStyle.Render("Tokens Used:") + fmt.Sprintf(" %d", tokensUsed))
     log.Println(successStyle.Render("Response Status:") + fmt.Sprintf(" %d", resp.StatusCode))
     log.Println(infoStyle.Render("Timestamp:") + fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
+    log.Println(successStyle.Render("Request Body:"))
+    log.Println(string(jsonString))
+    log.Println(successStyle.Render("Response Body:"))
+    log.Println(string(responseBody))
     log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("--------------------"))
 }
 
