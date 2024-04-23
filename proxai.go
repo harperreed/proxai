@@ -68,7 +68,7 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
         Address: *address,
     }
 
-    helpMarkdown, err := ioutil.ReadFile("help.md")
+    helpMarkdown, err := ioutil.ReadFile("README.md")
     if err != nil {
         http.Error(w, "Internal Server Error", http.StatusInternalServerError)
         return
