@@ -4,11 +4,14 @@ go 1.22.1
 
 require (
 	github.com/charmbracelet/lipgloss v0.10.0
+	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/gomarkdown/markdown v0.0.0-20240419095408-642f0ee99ae2
+	github.com/peterbourgon/diskv v2.0.1+incompatible
 )
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/google/btree v1.1.2 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
