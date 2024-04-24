@@ -6,7 +6,6 @@ require (
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
-	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203
 	github.com/gomarkdown/markdown v0.0.0-20240419095408-642f0ee99ae2
 	github.com/peterbourgon/diskv v2.0.1+incompatible
 )
