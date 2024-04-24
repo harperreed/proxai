@@ -61,6 +61,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     }
 
     m.viewport.SetContent(m.content)
+    m.viewport.GotoBottom() // Move viewport to the latest content at the bottom
     m.viewport, _ = m.viewport.Update(msg)
 
     // Adjust the viewport's YOffset to scroll to the bottom

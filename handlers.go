@@ -121,7 +121,7 @@ func (s *server) openAIProxy(w http.ResponseWriter, r *http.Request) {
         totalCost += float64(tokensUsed) * 0.06 / 1000
     }
     s.costLogger.Printf("Tokens Used: %d, Total Cost: $%.5f\n", tokensUsed, totalCost)
-
+    s.service.UpdateCounts(tokensUsed, 1)
     requestCount++
 
     w.Header().Set("Content-Type", "application/json")
