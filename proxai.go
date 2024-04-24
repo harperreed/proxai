@@ -14,13 +14,10 @@ import (
     "strings"
     "time"
     "os"
-    "os/exec"
-    "os/signal"
-    "syscall"
-    "bufio"
-    // "path/filepath"
-    "github.com/eiannone/keyboard"
+    // "os/exec"
     "github.com/peterbourgon/diskv"
+    tea "github.com/charmbracelet/bubbletea"
+    "github.com/charmbracelet/bubbles/viewport"
 )
 
 var (
@@ -41,17 +38,86 @@ var (
 )
 
 var (
-    requestCount   = 0
-    tokensCount    = 0
-    totalCost      = 0.0
-    quit           = make(chan os.Signal, 1)
-    cache          *diskv.Diskv
-    logger         *log.Logger
-    promptLogger   *log.Logger
-    costLogger     *log.Logger
-    reader         = bufio.NewReader(os.Stdin)
-    commandChannel = make(chan string)
+    requestCount = 0
+    tokensCount  = 0
+    totalCost    = 0.0
+    cache        *diskv.Diskv
+    logger       *log.Logger
+    promptLogger *log.Logger
+    costLogger   *log.Logger
 )
+
+type model struct {
+    viewport viewport.Model
+    content  string
+    ready    bool
+}
+
+func initialModel() model {
+    return model{
+        viewport: viewport.New(80, 20),
+        content:  "",
+        ready:    false,
+    }
+}
+
+func (m model) Init() tea.Cmd {
+    return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    var cmd tea.Cmd
+
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.Type {
+        case tea.KeyCtrlC:
+            return m, tea.Quit
+        case tea.KeyRunes:
+            switch string(msg.Runes) {
+            case "r", "R":
+                requestCount = 0
+                tokensCount = 0
+                totalCost = 0.0
+                m.content += "\nCounters reset."
+            case "c", "C":
+                cmd = tea.Sequence(
+                    tea.Printf("\033[2J"),
+                    tea.Printf("\033[1;1H"),
+                )
+                m.content = ""
+            }
+        }
+
+    case tea.WindowSizeMsg:
+        m.viewport.Width = msg.Width
+        m.viewport.Height = msg.Height - lipgloss.Height(statusBar())
+
+    case string:
+        m.content += msg
+    }
+
+    m.viewport.SetContent(m.content)
+    m.viewport, _ = m.viewport.Update(msg)
+
+    // Adjust the viewport's YOffset to scroll to the bottom
+    lines := strings.Split(m.content, "\n")
+    if len(lines) > m.viewport.Height {
+        m.viewport.YOffset = len(lines) - m.viewport.Height
+    }
+
+    return m, cmd
+}
+
+func (m model) View() string {
+    return fmt.Sprintf("%s\n%s", m.viewport.View(), statusBar())
+}
+
+func statusBar() string {
+    status := fmt.Sprintf("🐨: %s | Status: %s | Tokens: %d | Requests: %d | Total Cost: $%.5f",
+        fmt.Sprintf("http://%s:%d", *address, *port), "✅", tokensCount, requestCount, totalCost)
+    return statusStyle.Render(status)
+}
 
 func main() {
     flag.Parse()
@@ -82,22 +148,26 @@ func main() {
     defer costLogFile.Close()
     costLogger = log.New(costLogFile, "", log.LstdFlags)
 
-    signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+    m := initialModel()
+    p := tea.NewProgram(m)
+
     go func() {
-        <-quit
-        clearStatusBar()
-        fmt.Println("Exiting...")
-        os.Exit(0)
+    	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+              openAIProxy(w, r, p, &m)
+       	})
+        http.HandleFunc("/help", helpHandler)
+        m.content += infoStyle.Render("OpenAI Proxy Server is running on") + boldStyle.Render(fmt.Sprintf(" http://%s:%d", *address, *port))
+        m.content += successStyle.Render("For integration help, visit ") + boldStyle.Render(fmt.Sprintf(" http://%s:%d", *address, *port)) + boldStyle.Render("/help")
+        p.Send(tea.Msg(m.content))
+        http.ListenAndServe(fmt.Sprintf("%s:%d", *address, *port), nil)
     }()
 
-    go handleKeyboardCommands()
 
-    http.HandleFunc("/", openAIProxy)
-    http.HandleFunc("/help", helpHandler)
-    log.Println(infoStyle.Render("OpenAI Proxy Server is running on") + boldStyle.Render(fmt.Sprintf(" http://%s:%d", *address, *port)))
-    log.Println(successStyle.Render("For integration help, visit ") + boldStyle.Render(fmt.Sprintf(" http://%s:%d", *address, *port)) + boldStyle.Render("/help"))
-    go updateStatusBar()
-    http.ListenAndServe(fmt.Sprintf("%s:%d", *address, *port), nil)
+       if err := p.Start(); err != nil {
+           logger.Fatal(err)
+       }
+
+
 }
 
 func helpHandler(w http.ResponseWriter, r *http.Request) {
@@ -145,7 +215,8 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
     }
 }
 
-func openAIProxy(w http.ResponseWriter, r *http.Request) {
+func openAIProxy(w http.ResponseWriter, r *http.Request, p *tea.Program, m *model) {
+
     authHeader := r.Header.Get("Authorization")
     if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
         http.Error(w, "Bad Request: Missing or malformed authorization header", http.StatusBadRequest)
@@ -183,14 +254,14 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
     // Check cache
     cacheKey := fmt.Sprintf("%s:%s", r.Method, r.URL.String())
     if cachedResponse, err := cache.Read(cacheKey); err == nil {
-        log.Println(successStyle.Render("Cache hit"))
+        logger.Println(successStyle.Render("Cache hit"))
         w.Header().Set("Content-Type", "application/json")
         w.Write(cachedResponse)
         return
     }
 
     targetURL := fmt.Sprintf("https://api.openai.com%s", r.URL.Path)
-    log.Println(infoStyle.Render(fmt.Sprintf("Proxying request to %s", targetURL)))
+    logger.Println(infoStyle.Render(fmt.Sprintf("Proxying request to %s", targetURL)))
 
     req, err := http.NewRequest(r.Method, targetURL, r.Body)
     if err != nil {
@@ -233,6 +304,8 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
     // Cache response
     cache.Write(cacheKey, responseBody)
 
+    // Log request and response
+    logger.Printf("Request: %s %s\nResponse: %s\n", r.Method, r.URL, string(responseBody))
 
     // Log prompt
     if r.Method == "POST" {
@@ -257,90 +330,17 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(resp.StatusCode)
     w.Write(responseBody)
 
-    log.Println(successStyle.Render("Request:") + fmt.Sprintf(" %s %s", r.Method, r.URL))
-    log.Println(infoStyle.Render("Model:") + fmt.Sprintf(" %s", model))
-    log.Println(infoStyle.Render("Prompt Tokens:") + fmt.Sprintf(" %d", promptTokens))
-    log.Println(infoStyle.Render("Completion Tokens:") + fmt.Sprintf(" %d", completionTokens))
-    log.Println(infoStyle.Render("Tokens Used:") + fmt.Sprintf(" %d", tokensUsed))
-    log.Println(successStyle.Render("Response Status:") + fmt.Sprintf(" %d", resp.StatusCode))
-    log.Println(infoStyle.Render("Timestamp:") + fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
-    log.Println(successStyle.Render("Request Body:"))
-    log.Println("\n" + string(jsonString))
-    log.Println(successStyle.Render("Response Body:"))
-    log.Println("\n" +string(responseBody))
-    log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("\n\n--------------------\n\n"))
-
-    // Log request and response
-
-    logger.Printf("Method: %s %s, Model: %s, Tokens used: %d\n\nRequest:\n%s\nResponse:\n%s\n\n---------------------------\n", r.Method, r.URL,model, tokensUsed, string(jsonString), string(responseBody))
-
-
-}
-
-func updateStatusBar() {
-    for {
-        select {
-        case <-quit:
-            return
-        default:
-            status := fmt.Sprintf("🐨: %s | Status: %s | Tokens: %d | Requests: %d | Total Cost: $%.5f",
-                fmt.Sprintf("http://%s:%d", *address, *port), "✅", tokensCount, requestCount, totalCost)
-            statusBar := statusStyle.Render(status)
-
-            fmt.Print("\033[s")
-            fmt.Print("\033[999B")
-            fmt.Print("\r")
-            fmt.Print(statusBar)
-            fmt.Print("\033[u")
-
-            time.Sleep(1 * time.Second)
-        }
-    }
-}
-
-func clearStatusBar() {
-    fmt.Print("\033[s")
-    fmt.Print("\033[999B")
-    fmt.Print("\r")
-    fmt.Print("\033[K")
-    fmt.Print("\033[u")
-}
-
-func handleKeyboardCommands() {
-    err := keyboard.Open()
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer keyboard.Close()
-
-    for {
-        char, key, err := keyboard.GetKey()
-        if err != nil {
-            log.Fatal(err)
-        }
-
-        if key == keyboard.KeyCtrlC {
-            clearStatusBar()
-            fmt.Println("Exiting...")
-            os.Exit(0)
-        }
-
-        switch char {
-        case 'r', 'R':
-            requestCount = 0
-            tokensCount = 0
-            totalCost = 0.0
-            fmt.Println("Counters reset.")
-        case 'c', 'C':
-            cmd := exec.Command("clear")
-            cmd.Stdout = os.Stdout
-            cmd.Run()
-        }
-    }
-}
-
-func init() {
-    cmd := exec.Command("clear")
-    cmd.Stdout = os.Stdout
-    cmd.Run()
+    m.content += fmt.Sprintf("\n%s%s", successStyle.Render("Request:"), fmt.Sprintf(" %s %s", r.Method, r.URL))
+    m.content += fmt.Sprintf("\n%s%s", infoStyle.Render("Model:"), fmt.Sprintf(" %s", model))
+    m.content += fmt.Sprintf("\n%s%s", infoStyle.Render("Prompt Tokens:"), fmt.Sprintf(" %d", promptTokens))
+    m.content += fmt.Sprintf("\n%s%s", infoStyle.Render("Completion Tokens:"), fmt.Sprintf(" %d", completionTokens))
+    m.content += fmt.Sprintf("\n%s%s", infoStyle.Render("Tokens Used:"), fmt.Sprintf(" %d", tokensUsed))
+    m.content += fmt.Sprintf("\n%s%s", successStyle.Render("Response Status:"), fmt.Sprintf(" %d", resp.StatusCode))
+    m.content += fmt.Sprintf("\n%s%s", infoStyle.Render("Timestamp:"), fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
+    m.content += fmt.Sprintf("\n%s", successStyle.Render("Request Body:"))
+    m.content += fmt.Sprintf("\n%s", string(jsonString))
+    m.content += fmt.Sprintf("\n%s", successStyle.Render("Response Body:"))
+    m.content += fmt.Sprintf("\n%s", string(responseBody))
+    m.content += fmt.Sprintf("\n%s", lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("--------------------"))
+    p.Send(m.content)
 }
