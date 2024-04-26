@@ -2,8 +2,6 @@ package main
 
 import (
     "bytes"
-    // "crypto/md5"
-    // "encoding/hex"
     "encoding/json"
     "flag"
     "fmt"
@@ -19,11 +17,19 @@ import (
     "os/exec"
     "os/signal"
     "syscall"
+    "bufio"
+    // "path/filepath"
+    "github.com/eiannone/keyboard"
+    "github.com/peterbourgon/diskv"
 )
 
 var (
-    port    = flag.Int("port", 8080, "Port to listen on (default: 8080)")
-    address = flag.String("address", "localhost", "Address to listen on (default: localhost)")
+    port       = flag.Int("port", 8080, "Port to listen on (default: 8080)")
+    address    = flag.String("address", "localhost", "Address to listen on (default: localhost)")
+    cacheDir   = flag.String("cache-dir", "cache", "Directory to store cached responses")
+    logFile    = flag.String("log-file", "proxy.log", "File to log requests and responses")
+    promptFile = flag.String("prompt-file", "prompts.log", "File to log prompts")
+    costFile   = flag.String("cost-file", "costs.log", "File to log API costs")
 )
 
 var (
@@ -35,21 +41,56 @@ var (
 )
 
 var (
-    requestCount = 0
-    tokensCount = 0
-    quit         = make(chan os.Signal, 1)
+    requestCount   = 0
+    tokensCount    = 0
+    totalCost      = 0.0
+    quit           = make(chan os.Signal, 1)
+    cache          *diskv.Diskv
+    logger         *log.Logger
+    promptLogger   *log.Logger
+    costLogger     *log.Logger
+    reader         = bufio.NewReader(os.Stdin)
+    commandChannel = make(chan string)
 )
-
 
 func main() {
     flag.Parse()
 
+    cache = diskv.New(diskv.Options{
+        BasePath:     *cacheDir,
+        CacheSizeMax: 100 * 1024 * 1024, // 100MB cache size
+    })
+
+    logFile, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        log.Fatal("Failed to open log file:", err)
+    }
+    defer logFile.Close()
+    logger = log.New(logFile, "", log.LstdFlags)
+
+    promptLogFile, err := os.OpenFile(*promptFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        log.Fatal("Failed to open prompt log file:", err)
+    }
+    defer promptLogFile.Close()
+    promptLogger = log.New(promptLogFile, "", log.LstdFlags)
+
+    costLogFile, err := os.OpenFile(*costFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+    if err != nil {
+        log.Fatal("Failed to open cost log file:", err)
+    }
+    defer costLogFile.Close()
+    costLogger = log.New(costLogFile, "", log.LstdFlags)
+
     signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	go func() {
-	    <-quit
-	    clearStatusBar()
-	    os.Exit(0)
-	}()
+    go func() {
+        <-quit
+        clearStatusBar()
+        fmt.Println("Exiting...")
+        os.Exit(0)
+    }()
+
+    go handleKeyboardCommands()
 
     http.HandleFunc("/", openAIProxy)
     http.HandleFunc("/help", helpHandler)
@@ -73,8 +114,6 @@ func helpHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Internal Server Error", http.StatusInternalServerError)
         return
     }
-
-
 
     // Convert Markdown to HTML before rendering
     htmlContent := markdown.ToHTML(helpMarkdown, nil, nil)
@@ -141,17 +180,17 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-
-    // auth := strings.Split(authHeader, " ")[1]
-    // authHash := md5.Sum([]byte(auth))
-    // paramsHash := md5.Sum([]byte(r.URL.RawQuery))
-    // cachePath := fmt.Sprintf("cache/%x/%s/%x", authHash, model, paramsHash)
-
-    // Check cache here (omitted for simplicity)
+    // Check cache
+    cacheKey := fmt.Sprintf("%s:%s", r.Method, r.URL.String())
+    if cachedResponse, err := cache.Read(cacheKey); err == nil {
+        log.Println(successStyle.Render("Cache hit"))
+        w.Header().Set("Content-Type", "application/json")
+        w.Write(cachedResponse)
+        return
+    }
 
     targetURL := fmt.Sprintf("https://api.openai.com%s", r.URL.Path)
     log.Println(infoStyle.Render(fmt.Sprintf("Proxying request to %s", targetURL)))
-
 
     req, err := http.NewRequest(r.Method, targetURL, r.Body)
     if err != nil {
@@ -191,13 +230,32 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
         completionTokens = int(usage["completion_tokens"].(float64))
     }
 
-    // Save request and response details, model, tokens used, and timestamp to cache (omitted for simplicity)
+    // Cache response
+    cache.Write(cacheKey, responseBody)
+
+
+    // Log prompt
+    if r.Method == "POST" {
+        if prompt, ok := requestBody["prompt"].(string); ok {
+            promptLogger.Println(prompt)
+        }
+    }
+
+    // Update tokens used and total cost
+    if model == "gpt-3.5-turbo" {
+        tokensCount += tokensUsed
+        totalCost += float64(tokensUsed) * 0.002 / 1000
+    } else if model == "gpt-4" {
+        tokensCount += tokensUsed
+        totalCost += float64(tokensUsed) * 0.06 / 1000
+    }
+    costLogger.Printf("Tokens Used: %d, Total Cost: $%.5f\n", tokensUsed, totalCost)
+
+    requestCount++
 
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(resp.StatusCode)
     w.Write(responseBody)
-    requestCount++
-    tokensCount += tokensUsed
 
     log.Println(successStyle.Render("Request:") + fmt.Sprintf(" %s %s", r.Method, r.URL))
     log.Println(infoStyle.Render("Model:") + fmt.Sprintf(" %s", model))
@@ -207,38 +265,81 @@ func openAIProxy(w http.ResponseWriter, r *http.Request) {
     log.Println(successStyle.Render("Response Status:") + fmt.Sprintf(" %d", resp.StatusCode))
     log.Println(infoStyle.Render("Timestamp:") + fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
     log.Println(successStyle.Render("Request Body:"))
-    log.Println(string(jsonString))
+    log.Println("\n" + string(jsonString))
     log.Println(successStyle.Render("Response Body:"))
-    log.Println(string(responseBody))
-    log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("--------------------"))
+    log.Println("\n" +string(responseBody))
+    log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("\n\n--------------------\n\n"))
+
+    // Log request and response
+
+    logger.Printf("Method: %s %s, Model: %s, Tokens used: %d\n\nRequest:\n%s\nResponse:\n%s\n\n---------------------------\n", r.Method, r.URL,model, tokensUsed, string(jsonString), string(responseBody))
+
+
 }
 
 func updateStatusBar() {
     for {
-        status := fmt.Sprintf("🐨: %s | Status: %s | Tokens: %d | Requests: %d", fmt.Sprintf("http://%s:%d", *address, *port), "✅",tokensCount, requestCount)
-        statusBar := statusStyle.Render(status)
+        select {
+        case <-quit:
+            return
+        default:
+            status := fmt.Sprintf("🐨: %s | Status: %s | Tokens: %d | Requests: %d | Total Cost: $%.5f",
+                fmt.Sprintf("http://%s:%d", *address, *port), "✅", tokensCount, requestCount, totalCost)
+            statusBar := statusStyle.Render(status)
 
-        // Move cursor to the bottom of the console
-        fmt.Print("\033[s")    // Save cursor position
-        fmt.Print("\033[999B") // Move cursor to the bottom
-        fmt.Print("\r")        // Move cursor to the beginning of the line
-        fmt.Print(statusBar)
-        fmt.Print("\033[u") // Restore cursor position
+            fmt.Print("\033[s")
+            fmt.Print("\033[999B")
+            fmt.Print("\r")
+            fmt.Print(statusBar)
+            fmt.Print("\033[u")
 
-        time.Sleep(1 * time.Second)
+            time.Sleep(1 * time.Second)
+        }
     }
 }
 
 func clearStatusBar() {
-    fmt.Print("\033[s")    // Save cursor position
-    fmt.Print("\033[999B") // Move cursor to the bottom
-    fmt.Print("\r")        // Move cursor to the beginning of the line
-    fmt.Print("\033[K")    // Clear the line
-    fmt.Print("\033[u")    // Restore cursor position
+    fmt.Print("\033[s")
+    fmt.Print("\033[999B")
+    fmt.Print("\r")
+    fmt.Print("\033[K")
+    fmt.Print("\033[u")
+}
+
+func handleKeyboardCommands() {
+    err := keyboard.Open()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer keyboard.Close()
+
+    for {
+        char, key, err := keyboard.GetKey()
+        if err != nil {
+            log.Fatal(err)
+        }
+
+        if key == keyboard.KeyCtrlC {
+            clearStatusBar()
+            fmt.Println("Exiting...")
+            os.Exit(0)
+        }
+
+        switch char {
+        case 'r', 'R':
+            requestCount = 0
+            tokensCount = 0
+            totalCost = 0.0
+            fmt.Println("Counters reset.")
+        case 'c', 'C':
+            cmd := exec.Command("clear")
+            cmd.Stdout = os.Stdout
+            cmd.Run()
+        }
+    }
 }
 
 func init() {
-    // Clear the console screen
     cmd := exec.Command("clear")
     cmd.Stdout = os.Stdout
     cmd.Run()
