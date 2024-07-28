@@ -8,13 +8,14 @@ import (
 )
 
 type ProxyServer struct {
-    client       *http.Client
-    requestCount int64
-    tokensCount  int64
-    totalCost    float64
-    cache        *Cache
-    logger       *Logger
-    mutex        sync.RWMutex
+    client        *http.Client
+    requestCount  int64
+    tokensCount   int64
+    totalCost     float64
+    cache         *Cache
+    logger        *Logger
+    mutex         sync.RWMutex
+    openAIHandler *OpenAIHandler
 }
 
 func NewProxyServer(cacheDir, logDir string) (*ProxyServer, error) {
@@ -24,11 +25,17 @@ func NewProxyServer(cacheDir, logDir string) (*ProxyServer, error) {
         return nil, err
     }
 
-    return &ProxyServer{
-        client: &http.Client{Timeout: 30 * time.Second},
+    client := &http.Client{Timeout: 30 * time.Second}
+
+    server := &ProxyServer{
+        client: client,
         cache:  cache,
         logger: logger,
-    }, nil
+    }
+
+    server.openAIHandler = NewOpenAIHandler(client, logger)
+
+    return server, nil
 }
 
 func (s *ProxyServer) incrementRequestCount() {

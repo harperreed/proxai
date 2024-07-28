@@ -32,7 +32,7 @@ func main() {
 
     // Create a new serve mux and server
     mux := http.NewServeMux()
-    mux.HandleFunc("/", server.openAIProxy)
+    mux.HandleFunc("/", server.handleLLMRequest)  // Changed from server.openAIProxy to server.handleLLMRequest
     mux.HandleFunc("/help", server.helpHandler)
 
     srv := &http.Server{
