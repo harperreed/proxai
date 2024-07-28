@@ -59,11 +59,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         case tea.KeyEnter:
             m.handleCommand(m.textInput.Value())
             m.textInput.SetValue("")
+            return m, textinput.Blink
         }
 
     case tea.WindowSizeMsg:
-        // If we set a width on the input, it can overflow our window,
-        // so here we'll set the width to the width of the window
         m.textInput.Width = msg.Width - 4
 
     case errMsg:
@@ -76,7 +75,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleCommand(cmd string) {
-    switch strings.ToLower(cmd) {
+    switch strings.ToLower(strings.TrimSpace(cmd)) {
     case "r", "reset":
         m.server.resetCounters()
         m.lastOutput = "Counters reset."

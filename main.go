@@ -68,7 +68,7 @@ func main() {
     wg.Add(1)
     go func() {
         defer wg.Done()
-        if err := startUI(ctx, server); err != nil {
+        if err := startUI(server); err != nil {
             log.Printf("Error running UI: %v", err)
             cancel() // Cancel the context if the UI fails
         }

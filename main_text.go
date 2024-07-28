@@ -11,7 +11,6 @@ type HTTPClient interface {
     Do(req *http.Request) (*http.Response, error)
 }
 
-
 type MockClient struct {
     Resp *http.Response
     Err  error
@@ -19,19 +18,23 @@ type MockClient struct {
 
 var client HTTPClient = &http.Client{}  // Default, real client
 
-
 func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
     return m.Resp, m.Err
 }
 
 func TestHelpHandler(t *testing.T) {
+    server, err := NewProxyServer("./test_cache", "./test_logs")
+    if err != nil {
+        t.Fatalf("Failed to create proxy server: %v", err)
+    }
+
     req, err := http.NewRequest("GET", "/help", nil)
     if err != nil {
         t.Fatal(err)
     }
 
     rr := httptest.NewRecorder()
-    handler := http.HandlerFunc(helpHandler)
+    handler := http.HandlerFunc(server.helpHandler)
 
     handler.ServeHTTP(rr, req)
 
