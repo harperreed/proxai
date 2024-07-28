@@ -2,8 +2,10 @@ package main
 
 import (
     "encoding/json"
+    "fmt"
     "os"
     "path/filepath"
+    "sync"
     "time"
 )
 
@@ -12,6 +14,7 @@ type Logger struct {
     responseLogFile *os.File
     promptLogFile   *os.File
     costLogFile     *os.File
+    mu              sync.Mutex
 }
 
 func NewLogger(logDir string) (*Logger, error) {
@@ -48,40 +51,60 @@ func NewLogger(logDir string) (*Logger, error) {
 }
 
 func (l *Logger) LogRequest(method, path string, body map[string]interface{}) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+
     log := map[string]interface{}{
         "timestamp": time.Now().Format(time.RFC3339),
         "method":    method,
         "path":      path,
         "body":      body,
     }
-    json.NewEncoder(l.requestLogFile).Encode(log)
+    if err := json.NewEncoder(l.requestLogFile).Encode(log); err != nil {
+        fmt.Printf("Error logging request: %v\n", err)
+    }
 }
 
 func (l *Logger) LogResponse(statusCode int, body map[string]interface{}) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+
     log := map[string]interface{}{
         "timestamp":  time.Now().Format(time.RFC3339),
         "statusCode": statusCode,
         "body":       body,
     }
-    json.NewEncoder(l.responseLogFile).Encode(log)
+    if err := json.NewEncoder(l.responseLogFile).Encode(log); err != nil {
+        fmt.Printf("Error logging response: %v\n", err)
+    }
 }
 
 func (l *Logger) LogPrompt(prompt string) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+
     log := map[string]interface{}{
         "timestamp": time.Now().Format(time.RFC3339),
         "prompt":    prompt,
     }
-    json.NewEncoder(l.promptLogFile).Encode(log)
+    if err := json.NewEncoder(l.promptLogFile).Encode(log); err != nil {
+        fmt.Printf("Error logging prompt: %v\n", err)
+    }
 }
 
 func (l *Logger) LogCost(model string, tokens int, cost float64) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+
     log := map[string]interface{}{
         "timestamp": time.Now().Format(time.RFC3339),
         "model":     model,
         "tokens":    tokens,
         "cost":      cost,
     }
-    json.NewEncoder(l.costLogFile).Encode(log)
+    if err := json.NewEncoder(l.costLogFile).Encode(log); err != nil {
+        fmt.Printf("Error logging cost: %v\n", err)
+    }
 }
 
 func (l *Logger) Close() {

@@ -10,6 +10,7 @@ import (
     "os/signal"
     "syscall"
     "time"
+    "sync"
 
     "github.com/charmbracelet/lipgloss"
 )
@@ -39,41 +40,59 @@ func main() {
         Handler: mux,
     }
 
-    // Start the server in a goroutine
-    go func() {
-        log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("OpenAI Proxy Server is running on") +
-            lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf(" http://%s:%d", *address, *port)))
+    // Create a context that can be cancelled
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
 
-        if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-            log.Fatalf("ListenAndServe(): %v", err)
-        }
-    }()
+    // Create a WaitGroup to wait for all goroutines to finish
+    var wg sync.WaitGroup
 
     // Set up signal handling
     stop := make(chan os.Signal, 1)
     signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-    // Start the UI
+    // Start the server in a goroutine
+    wg.Add(1)
     go func() {
-        if err := startUI(server); err != nil {
-            log.Printf("Error running UI: %v", err)
-            stop <- os.Interrupt // Signal main goroutine to stop if UI exits
+        defer wg.Done()
+        log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("OpenAI Proxy Server is running on") +
+            lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf(" http://%s:%d", *address, *port)))
+
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Printf("ListenAndServe(): %v", err)
+            cancel() // Cancel the context if the server fails to start
         }
     }()
 
-    <-stop // Wait for SIGINT or SIGTERM
+    // Start the UI
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        if err := startUI(ctx, server); err != nil {
+            log.Printf("Error running UI: %v", err)
+            cancel() // Cancel the context if the UI fails
+        }
+    }()
 
-    log.Println("Shutting down server...")
-
-    // Create a deadline to wait for.
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-
-    // Doesn't block if no connections, but will otherwise wait
-    // until the timeout deadline.
-    if err := srv.Shutdown(ctx); err != nil {
-        log.Fatalf("Server forced to shutdown: %v", err)
+    // Wait for interrupt signal or context cancellation
+    select {
+    case <-stop:
+        log.Println("Received interrupt signal")
+    case <-ctx.Done():
+        log.Println("Context cancelled")
     }
+
+    // Shutdown the server
+    log.Println("Shutting down server...")
+    shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer shutdownCancel()
+
+    if err := srv.Shutdown(shutdownCtx); err != nil {
+        log.Printf("Server forced to shutdown: %v", err)
+    }
+
+    // Wait for all goroutines to finish
+    wg.Wait()
 
     server.logger.Close()
     log.Println("Server exiting")

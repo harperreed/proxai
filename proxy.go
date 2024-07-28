@@ -4,6 +4,7 @@ import (
     "net/http"
     "sync"
     "time"
+    "sync/atomic"
 )
 
 type ProxyServer struct {
@@ -31,33 +32,11 @@ func NewProxyServer(cacheDir, logDir string) (*ProxyServer, error) {
 }
 
 func (s *ProxyServer) incrementRequestCount() {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-    s.requestCount++
+    atomic.AddInt64(&s.requestCount, 1)
 }
 
 func (s *ProxyServer) incrementTokensCount(tokens int) {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-    s.tokensCount += int64(tokens)
+    atomic.AddInt64(&s.tokensCount, int64(tokens))
 }
 
-func (s *ProxyServer) addCost(cost float64) {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-    s.totalCost += cost
-}
-
-func (s *ProxyServer) getStats() (int64, int64, float64) {
-    s.mutex.RLock()
-    defer s.mutex.RUnlock()
-    return s.requestCount, s.tokensCount, s.totalCost
-}
-
-func (s *ProxyServer) resetCounters() {
-    s.mutex.Lock()
-    defer s.mutex.Unlock()
-    s.requestCount = 0
-    s.tokensCount = 0
-    s.totalCost = 0
-}
+func (s *Pro
