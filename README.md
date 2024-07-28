@@ -2,81 +2,139 @@
 
 Welcome to the `proxai` repository! This project, created by [@harperreed](https://github.com/harperreed), provides a proxy server for the OpenAI API. 🚀
 
-## Features ✨
+## Summary of Project 📜
 
-- Forwards requests to the OpenAI API 📡
-- Supports various command-line arguments for configuration 🛠️
-- Provides a helpful `/help` endpoint for integration guidance 📚
-- Displays a real-time status bar with request and token usage statistics 📊
-- Uses cool emoji to make the experience more fun! 😎
+`proxai` is a proxy server that simplifies interactions with the OpenAI API. Key features include forwarding requests, flexible configuration via command-line arguments, real-time status monitoring, and integration guidance via a `/help` endpoint.
 
-## Usage:
+## How to Use 🤖
 
-Send requests to the proxy server endpoint, and it will forward them to the OpenAI API.
+To start using the proxy server, follow these steps:
 
-### Command-line Arguments:
+1. **Run the Proxy Server:**
 
-*   `-port`: Port to listen on (default: 8080, current: {{.Port}})
-*   `-address`: Address to listen on (default: localhost, current: {{.Address}})
+    Navigate to the directory where you've cloned the repository and run:
 
-### Example:
+    ```sh
+    ./proxai -port=9000 -address=0.0.0.0
+    ```
 
-To start the proxy server on port 9000 and allow access from any IP address:
+    or if you prefer using Go:
 
-`./proxai -port=9000 -address=0.0.0.0`
+    ```sh
+    go run proxai.go -port=9000 -address=0.0.0.0
+    ```
 
-or
+2. **Integration:**
 
-`go run proxai.go -port=9000 -address=0.0.0.0`
+   Use the proxy in your code with minor tweaks to your OpenAI client setup.
 
+    ### Langchain
 
-## Integration 🔌
+    ```python
+    from langchain.chat_models.openai import ChatOpenAI
 
-To use the proxy with your code, make the following changes:
+    openai = ChatOpenAI(
+        model_name="your-model-name",
+        openai_api_key="your-api-key",
+        openai_api_base="http://<address>:<port>/v1",
+    )
+    ```
 
-### Langchain
-```python
-from langchain.chat_models.openai import ChatOpenAI
+    ### OpenAI Python Client
 
-openai = ChatOpenAI(
-    model_name="your-model-name",
-    openai_api_key="your-api-key",
-    openai_api_base="http://{{.Address}}:{{.Port}}/v1",
-)
+    ```python
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="http://<address>:<port>/v1",
+    )
+    ```
+
+3. **Command-line Arguments:**
+
+    - `-port`: Port to listen on (default: 8080)
+    - `-address`: Address to listen on (default: localhost)
+
+    Start customizing the server by using these arguments as needed.
+
+4. **Access Help:**
+
+   Visit the `/help` endpoint to get more details and guidance while the proxy server is running.
+
+## Tech Info ⚙️
+
+This section provides technical details about the `proxai` repository, its file structure, and content.
+
+### Directory/File Tree
+
+```
+proxai/
+├── LICENSE
+├── README.md
+├── cache.go
+├── go.mod
+├── go.sum
+├── handlers.go
+├── logger.go
+├── logs/
+│   ├── costs.log
+│   ├── prompts.log
+│   ├── requests.log
+│   └── responses.log
+├── main.go
+├── main_text.go
+├── proxy.go
+├── ui.go
+└── utils.go
 ```
 
-### OpenAI Python Client
-```python
-from openai import OpenAI
+### Tech Stack
 
-client = OpenAI(
-    base_url="http://{{.Address}}:{{.Port}}/v1",
-)
-```
+- **Programming Language:** Go
+- **HTTP Client:** `net/http` package
+- **Markdown Rendering:** `github.com/gomarkdown/markdown`
+- **Logging:** `github.com/peterbourgon/diskv`
+- **CLI:** `github.com/charmbracelet` suite for CLI and UI interactions
 
-For more details, visit the `/help` endpoint of the running proxy server. 📖
+### File Summaries
+
+- **`LICENSE`:** Contains the MIT License information.
+- **`README.md`:** Documentation file (You're reading it!).
+- **`cache.go`:** Implements caching mechanism using `diskv`.
+- **`go.mod`:** Go module dependencies.
+- **`go.sum`:** Checksums for Go module dependencies.
+- **`handlers.go`:** HTTP handlers for proxy and help endpoints.
+- **`logger.go`:** Logger implementation for request and response logs.
+- **`logs/`:** Directory containing log files.
+- **`main.go`:** Main entry point to start the proxy server.
+- **`main_text.go`:** Test cases for the main components.
+- **`proxy.go`:** Core proxy server implementation.
+- **`ui.go`:** CLI UI for monitoring server status.
+- **`utils.go`:** Utility functions.
 
 ## Building 🚀
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/harperreed/proxai.git
-   ```
+1. **Clone the Repository:**
 
-2. Navigate to the project directory:
-   ```
-   cd proxai
-   ```
+    ```sh
+    git clone https://github.com/harperreed/proxai.git
+    ```
 
-3. Build and run the proxy server:
-   ```
-   go run proxai.go -port=9000 -address=0.0.0.0
-   ```
+2. **Navigate to the Project Directory:**
 
-   You can customize the port and address using the command-line arguments.
+    ```sh
+    cd proxai
+    ```
 
-4. Send requests to the proxy server endpoint, and it will forward them to the OpenAI API. 📬
+3. **Build and Run the Proxy Server:**
 
+    ```sh
+    go run proxai.go -port=9000 -address=0.0.0.0
+    ```
+
+4. **Send Requests:**
+
+    Point your requests to the proxy server endpoint, and it will handle the rest.
 
 ## Contributing 🤝
 
