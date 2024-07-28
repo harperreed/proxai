@@ -1,6 +1,7 @@
 package main
 
 import (
+    "context"
     "flag"
     "fmt"
     "log"
@@ -8,14 +9,16 @@ import (
     "os"
     "os/signal"
     "syscall"
+    "time"
+
+    "github.com/charmbracelet/lipgloss"
 )
 
 var (
-    port       = flag.Int("port", 8080, "Port to listen on")
-    address    = flag.String("address", "localhost", "Address to listen on")
-    cacheDir   = flag.String("cache-dir", "./cache", "Directory for caching responses")
-    logDir     = flag.String("log-dir", "./logs", "Directory for log files")
-    quit       = make(chan os.Signal, 1)
+    port     = flag.Int("port", 8080, "Port to listen on")
+    address  = flag.String("address", "localhost", "Address to listen on")
+    cacheDir = flag.String("cache-dir", "./cache", "Directory for caching responses")
+    logDir   = flag.String("log-dir", "./logs", "Directory for log files")
 )
 
 func main() {
@@ -26,25 +29,52 @@ func main() {
         log.Fatalf("Failed to create proxy server: %v", err)
     }
 
-    signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+    // Create a new serve mux and server
+    mux := http.NewServeMux()
+    mux.HandleFunc("/", server.openAIProxy)
+    mux.HandleFunc("/help", server.helpHandler)
 
+    srv := &http.Server{
+        Addr:    fmt.Sprintf("%s:%d", *address, *port),
+        Handler: mux,
+    }
+
+    // Start the server in a goroutine
     go func() {
-        <-quit
-        clearStatusBar()
-        server.logger.Close()
-        os.Exit(0)
+        log.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render("OpenAI Proxy Server is running on") +
+            lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf(" http://%s:%d", *address, *port)))
+
+        if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+            log.Fatalf("ListenAndServe(): %v", err)
+        }
     }()
 
-    http.HandleFunc("/", server.openAIProxy)
-    http.HandleFunc("/help", server.helpHandler)
+    // Set up signal handling
+    stop := make(chan os.Signal, 1)
+    signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-    log.Println(infoStyle.Render("OpenAI Proxy Server is running on") + boldStyle.Render(fmt.Sprintf(" http://%s:%d", *address, *port)))
-    log.Println(successStyle.Render("For integration help, visit ") + boldStyle.Render(fmt.Sprintf(" http://%s:%d/help", *address, *port)))
+    // Start the UI
+    go func() {
+        if err := startUI(server); err != nil {
+            log.Printf("Error running UI: %v", err)
+            stop <- os.Interrupt // Signal main goroutine to stop if UI exits
+        }
+    }()
 
-    go server.updateStatusBar()
-    go handleKeyboardInput(server)
+    <-stop // Wait for SIGINT or SIGTERM
 
-    if err := http.ListenAndServe(fmt.Sprintf("%s:%d", *address, *port), nil); err != nil {
-        log.Fatalf("Failed to start server: %v", err)
+    log.Println("Shutting down server...")
+
+    // Create a deadline to wait for.
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    // Doesn't block if no connections, but will otherwise wait
+    // until the timeout deadline.
+    if err := srv.Shutdown(ctx); err != nil {
+        log.Fatalf("Server forced to shutdown: %v", err)
     }
+
+    server.logger.Close()
+    log.Println("Server exiting")
 }
