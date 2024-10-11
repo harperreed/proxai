@@ -136,9 +136,25 @@ proxai/
 
     Point your requests to the proxy server endpoint, and it will handle the rest.
 
+## Testing 🧪
+
+To run the tests for this project, use the following command:
+
+```sh
+go test ./...
+```
+
+This will run all tests in the project, including the newly added tests for the cache functionality.
+
 ## Contributing 🤝
 
-Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request. Let's make this project even better together! 💪
+Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request. When contributing code, please ensure that you:
+
+1. Write tests for new functionality
+2. Update existing tests if you're modifying functionality
+3. Ensure all tests pass before submitting your changes
+
+Let's make this project even better together! 💪
 
 ## License 📜
 
