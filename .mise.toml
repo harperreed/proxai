@@ -1,0 +1,21 @@
+[tools]
+go = "1.23.2" # Specify the Go version you want to use
+
+
+[tasks.llm_helper_generate_output_txt]
+run = "repo2txt --exclude-dir  public resources node_modules  pb_data vendor --ignore-files package-lock.json reader spec.md go.sum  rss_reader.db rss_reader.db-journal  --ignore-types .db"
+description = 'Remove all the various output.txts'                                                                                                                                            # hide this task from the list
+
+[tasks.test]
+depends = ["code_test", "code_race_condition_test"]
+description = 'Run all tests, including code tests and race condition tests'
+
+
+[tasks]
+build = "go build -o reader cmd/main.go"
+code_test = "go test -v -parallel 4 ./... -coverprofile=coverage.out -covermode=atomic"
+code_race_condition_test = "go test -parallel 4 -race -v ./..."
+clean = "go clean && rm -f agent"
+run = "go run cmd/main.go"
+deps = "go get ./... && go mod tidy"
+all = { depends = ["test", "build"] }
