@@ -1,6 +1,6 @@
 [tools]
-go = "1.23.2" # Specify the Go version you want to use
-
+go = "1.23.2"            # Specify the Go version you want to use
+golangci-lint = "1.61.0" # Add this line
 
 [tasks.llm_helper_generate_output_txt]
 run = "repo2txt --exclude-dir  public resources node_modules  pb_data vendor --ignore-files package-lock.json reader spec.md go.sum  rss_reader.db rss_reader.db-journal  --ignore-types .db"
