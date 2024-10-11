@@ -145,3 +145,20 @@ Contributions are welcome! If you find any issues or have suggestions for improv
 This project is licensed under the [MIT License](https://github.com/harperreed/proxai/blob/main/LICENSE). Feel free to use, modify, and distribute the code as per the terms of the license.
 
 Happy proxying! 🎉
+
+## Testing 🧪
+
+This project includes comprehensive unit tests for various components, including the UI module. To run the tests, use the following command:
+
+```sh
+go test ./...
+```
+
+The UI tests cover the following components:
+- Model initialization
+- Update method for handling user input and window size changes
+- Command handling (reset, clear, quit)
+- View rendering
+- UI startup
+
+These tests ensure the reliability and correctness of the command-line interface for the OpenAI Proxy Server.
