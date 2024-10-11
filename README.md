@@ -145,3 +145,19 @@ Contributions are welcome! If you find any issues or have suggestions for improv
 This project is licensed under the [MIT License](https://github.com/harperreed/proxai/blob/main/LICENSE). Feel free to use, modify, and distribute the code as per the terms of the license.
 
 Happy proxying! 🎉
+
+## Testing 🧪
+
+To run the unit tests for the project, use the following command:
+
+```sh
+go test ./...
+```
+
+This will run all tests in the project, including the newly added tests for utility functions in `internal/utils/utils_test.go`.
+
+The tests cover:
+- The `calculateCost` function with various inputs
+- The lipgloss style variables initialization
+
+Ensure that all tests pass before submitting any changes to the project.
