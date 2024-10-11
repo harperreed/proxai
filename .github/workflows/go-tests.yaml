@@ -1,114 +1,114 @@
 name: Go Tests and Lint
 
 on:
-  push:
-    branches:
-      - 'main'
-    paths-ignore:
-      - '.github/**'
-      - '**.md'
-      - '.gitignore'
-      - '.mise.toml'
-  pull_request:
-    branches:
-      - '**'
+    push:
+        branches:
+            - "main"
+        paths-ignore:
+            - ".github/**"
+            - "**.md"
+            - ".gitignore"
+            - ".mise.toml"
+    pull_request:
+        branches:
+            - "**"
 
 jobs:
-  # lint:
-  #   name: Lint
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Check out code
-  #       uses: actions/checkout@v3.5.3
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v4.0.1
-  #       with:
-  #         go-version: "1.21"
-  #     - name: Cache Go modules
-  #       uses: actions/cache@v3.3.1
-  #       with:
-  #         path: ~/go/pkg/mod
-  #         key: ${{ runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-go-lint-
-  #     - name: Install golangci-lint
-  #       run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
-  #     - name: Run golangci-lint
-  #       run: golangci-lint run
+    lint:
+        name: Lint
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v3.5.3
+            - name: Set up Go
+              uses: actions/setup-go@v4.0.1
+              with:
+                  go-version: "1.21"
+            - name: Cache Go modules
+              uses: actions/cache@v3.3.1
+              with:
+                  path: ~/go/pkg/mod
+                  key: ${{ runner.os }}-go-lint-${{ hashFiles('**/go.sum') }}
+                  restore-keys: |
+                      ${{ runner.os }}-go-lint-
+            - name: Install golangci-lint
+              run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
+            - name: Run golangci-lint
+              run: golangci-lint run
 
-  test:
-    name: Run Go Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v3.5.3
-      - name: Set up Go
-        uses: actions/setup-go@v4.0.1
-        with:
-          go-version: "1.21"
-      - name: Cache Go modules
-        uses: actions/cache@v3.3.1
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      - name: Verify dependencies
-        run: go mod verify
-      - name: Run go mod tidy
-        run: go mod tidy
-      - name: Install dependencies
-        run: go mod download
-      - name: Check and set OPENAI_API_KEY
-        run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-            echo "OPENAI_API_KEY is not set in the repository secrets"
-            echo "OPENAI_API_KEY=" >> $GITHUB_ENV
-          else
-            echo "OPENAI_API_KEY is set in the repository secrets"
-            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
-          fi
-      - name: Run tests
-        run: go test -v  ./... -coverprofile=coverage.out -covermode=atomic
-      - name: Upload test results
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: test-results
-          path: coverage.out
+    test:
+        name: Run Go Tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v3.5.3
+            - name: Set up Go
+              uses: actions/setup-go@v4.0.1
+              with:
+                  go-version: "1.21"
+            - name: Cache Go modules
+              uses: actions/cache@v3.3.1
+              with:
+                  path: ~/go/pkg/mod
+                  key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+                  restore-keys: |
+                      ${{ runner.os }}-go-
+            - name: Verify dependencies
+              run: go mod verify
+            - name: Run go mod tidy
+              run: go mod tidy
+            - name: Install dependencies
+              run: go mod download
+            - name: Check and set OPENAI_API_KEY
+              run: |
+                  if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+                    echo "OPENAI_API_KEY is not set in the repository secrets"
+                    echo "OPENAI_API_KEY=" >> $GITHUB_ENV
+                  else
+                    echo "OPENAI_API_KEY is set in the repository secrets"
+                    echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+                  fi
+            - name: Run tests
+              run: go test -v  ./... -coverprofile=coverage.out -covermode=atomic
+            - name: Upload test results
+              uses: actions/upload-artifact@v3.1.2
+              with:
+                  name: test-results
+                  path: coverage.out
 
-  # race_test:
-  #   name: Run Race Detector
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 20
-  #   steps:
-  #     - name: Check out code
-  #       uses: actions/checkout@v3.5.3
-  #     - name: Set up Go
-  #       uses: actions/setup-go@v4.0.1
-  #       with:
-  #         go-version: "1.21"
-  #     - name: Cache Go modules
-  #       uses: actions/cache@v3.3.1
-  #       with:
-  #         path: ~/go/pkg/mod
-  #         key: ${{ runner.os }}-go-race-${{ hashFiles('**/go.sum') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-go-race-
-  #     - name: Verify dependencies
-  #       run: go mod verify
-  #     - name: Run go mod tidy
-  #       run: go mod tidy
-  #     - name: Install dependencies
-  #       run: go mod download
-  #     - name: Check and set OPENAI_API_KEY
-  #       run: |
-  #         if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-  #           echo "OPENAI_API_KEY is not set in the repository secrets"
-  #           echo "OPENAI_API_KEY=" >> $GITHUB_ENV
-  #         else
-  #           echo "OPENAI_API_KEY is set in the repository secrets"
-  #           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
-  #         fi
-  #     - name: Run tests with race detector
-  #       run: go test -race -v ./...
+    race_test:
+        name: Run Race Detector
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Check out code
+              uses: actions/checkout@v3.5.3
+            - name: Set up Go
+              uses: actions/setup-go@v4.0.1
+              with:
+                  go-version: "1.21"
+            - name: Cache Go modules
+              uses: actions/cache@v3.3.1
+              with:
+                  path: ~/go/pkg/mod
+                  key: ${{ runner.os }}-go-race-${{ hashFiles('**/go.sum') }}
+                  restore-keys: |
+                      ${{ runner.os }}-go-race-
+            - name: Verify dependencies
+              run: go mod verify
+            - name: Run go mod tidy
+              run: go mod tidy
+            - name: Install dependencies
+              run: go mod download
+            - name: Check and set OPENAI_API_KEY
+              run: |
+                  if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+                    echo "OPENAI_API_KEY is not set in the repository secrets"
+                    echo "OPENAI_API_KEY=" >> $GITHUB_ENV
+                  else
+                    echo "OPENAI_API_KEY is set in the repository secrets"
+                    echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+                  fi
+            - name: Run tests with race detector
+              run: go test -race -v ./...
