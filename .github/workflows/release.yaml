@@ -1,0 +1,95 @@
+name: Create Release
+on:
+    push:
+        branches:
+            - "main"
+        paths-ignore:
+            - ".github/**"
+            - "**.md"
+            - ".gitignore"
+            - ".mise.toml"
+jobs:
+    create_release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v3
+              with:
+                  fetch-depth: 0
+            - name: Set up Go
+              uses: actions/setup-go@v4
+              with:
+                  go-version: "1.21" # Specify the Go version you're using
+            - name: Get dependencies
+              run: |
+                  go mod download
+                  go mod tidy
+            - name: Get latest tag
+              id: get_latest_tag
+              run: |
+                  git fetch --tags
+                  latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+                  echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
+            - name: Bump version and push tag
+              id: bump_version
+              run: |
+                  latest_tag=${{ steps.get_latest_tag.outputs.LATEST_TAG }}
+                  new_tag=$(echo $latest_tag | awk -F. '{$NF = $NF + 1;} 1' | sed 's/ /./g')
+                  git config --local user.email "action@github.com"
+                  git config --local user.name "GitHub Action"
+                  git tag -a $new_tag -m "Release $new_tag"
+                  git push origin $new_tag
+                  echo "NEW_TAG=$new_tag" >> $GITHUB_OUTPUT
+            - name: Generate Changelog
+              id: generate_changelog
+              run: |
+                  changelog=$(git log ${{ steps.get_latest_tag.outputs.LATEST_TAG }}..HEAD --pretty=format:"- %s" --reverse)
+                  echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+                  echo "$changelog" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+            - name: Build for Windows
+              run: GOOS=windows GOARCH=amd64 go build -o proxai-windows-amd64.exe cmd/main.go
+            - name: Build for Linux
+              run: GOOS=linux GOARCH=amd64 go build -o proxai-linux-amd64 cmd/main.go
+            - name: Build for macOS ARM64
+              run: GOOS=darwin GOARCH=arm64 go build -o proxai-darwin-arm64 cmd/main.go
+            - name: Create Release
+              id: create_release
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ steps.bump_version.outputs.NEW_TAG }}
+                  release_name: Release ${{ steps.bump_version.outputs.NEW_TAG }}
+                  body: |
+                      Changes in this Release:
+                      ${{ steps.generate_changelog.outputs.CHANGELOG }}
+                  draft: false
+                  prerelease: false
+            - name: Upload Windows Release Asset
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  upload_url: ${{ steps.create_release.outputs.upload_url }}
+                  asset_path: ./proxai-windows-amd64.exe
+                  asset_name: proxai-windows-amd64.exe
+                  asset_content_type: application/octet-stream
+            - name: Upload Linux Release Asset
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  upload_url: ${{ steps.create_release.outputs.upload_url }}
+                  asset_path: ./proxai-linux-amd64
+                  asset_name: proxai-linux-amd64
+                  asset_content_type: application/octet-stream
+            - name: Upload macOS ARM64 Release Asset
+              uses: actions/upload-release-asset@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  upload_url: ${{ steps.create_release.outputs.upload_url }}
+                  asset_path: ./proxai-darwin-arm64
+                  asset_name: proxai-darwin-arm64
+                  asset_content_type: application/octet-stream
