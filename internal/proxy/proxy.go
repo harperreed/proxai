@@ -1,55 +1,78 @@
-package main
+package proxy
 
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/gomarkdown/markdown"
+	"github.com/harperreed/proxai/internal/cache"
+	"github.com/harperreed/proxai/internal/logger"
+	"github.com/harperreed/proxai/internal/utils"
 )
 
-func (s *ProxyServer) helpHandler(w http.ResponseWriter, r *http.Request) {
-	helpMarkdown, err := os.ReadFile("README.md")
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	htmlContent := markdown.ToHTML(helpMarkdown, nil, nil)
-
-	tmpl, err := template.New("help").Parse(`
-	<!DOCTYPE html>
-	<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Proxai - OpenAI API Proxy</title>
-		<link href="https://cdn.tailwindcss.com" rel="stylesheet">
-	</head>
-	<body class="bg-gray-100 text-red-900 font-sans">
-		<div class="container mx-auto px-4 py-8">{{.Content}}</div>
-	</body>
-	</html>`)
-
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	err = tmpl.Execute(w, struct{ Content template.HTML }{template.HTML(htmlContent)})
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
+type ProxyServer struct {
+	Client       *http.Client
+	RequestCount int64
+	TokensCount  int64
+	TotalCost    float64
+	Cache        *cache.Cache
+	Logger       *logger.Logger
+	Mutex        sync.RWMutex
 }
 
-func (s *ProxyServer) openAIProxy(w http.ResponseWriter, r *http.Request) {
+func NewProxyServer(cacheDir, logDir string) (*ProxyServer, error) {
+	cache := cache.NewCache(cacheDir)
+	logger, err := logger.NewLogger(logDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ProxyServer{
+		Client: &http.Client{Timeout: 30 * time.Second},
+		Cache:  cache,
+		Logger: logger,
+	}, nil
+}
+
+func (s *ProxyServer) incrementRequestCount() {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+	s.RequestCount++
+}
+
+func (s *ProxyServer) incrementTokensCount(tokens int) {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+	s.TokensCount += int64(tokens)
+}
+
+func (s *ProxyServer) addCost(cost float64) {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+	s.TotalCost += cost
+}
+
+func (s *ProxyServer) ResetCounters() {
+	s.Mutex.Lock()
+	defer s.Mutex.Unlock()
+	s.RequestCount = 0
+	s.TokensCount = 0
+	s.TotalCost = 0
+}
+
+func (s *ProxyServer) GetStats() (int64, int64, float64) {
+	s.Mutex.RLock()
+	defer s.Mutex.RUnlock()
+	return s.RequestCount, s.TokensCount, s.TotalCost
+}
+
+func (s *ProxyServer) OpenAIProxy(w http.ResponseWriter, r *http.Request) {
+
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
 		http.Error(w, "Bad Request: Missing or malformed authorization header", http.StatusBadRequest)
@@ -70,7 +93,7 @@ func (s *ProxyServer) openAIProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetURL := fmt.Sprintf("https://api.openai.com%s", r.URL.Path)
-	log.Println(infoStyle.Render(fmt.Sprintf("Proxying request to %s", targetURL)))
+	log.Println(utils.InfoStyle.Render(fmt.Sprintf("Proxying request to %s", targetURL)))
 
 	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
@@ -82,7 +105,7 @@ func (s *ProxyServer) openAIProxy(w http.ResponseWriter, r *http.Request) {
 	proxyReq.Header.Set("Authorization", authHeader)
 	proxyReq.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.client.Do(proxyReq)
+	resp, err := s.Client.Do(proxyReq)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -123,18 +146,18 @@ func (s *ProxyServer) extractTokenUsage(responseData map[string]interface{}) int
 }
 
 func (s *ProxyServer) logRequestDetails(r *http.Request, model string, tokensUsed, statusCode int, requestBody map[string]interface{}, responseBody []byte) {
-	log.Println(successStyle.Render("Request:") + fmt.Sprintf(" %s %s", r.Method, r.URL))
-	log.Println(infoStyle.Render("Model:") + fmt.Sprintf(" %s", model))
-	log.Println(infoStyle.Render("Tokens Used:") + fmt.Sprintf(" %d", tokensUsed))
-	log.Println(successStyle.Render("Response Status:") + fmt.Sprintf(" %d", statusCode))
-	log.Println(infoStyle.Render("Timestamp:") + fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
+	log.Println(utils.SuccessStyle.Render("Request:") + fmt.Sprintf(" %s %s", r.Method, r.URL))
+	log.Println(utils.InfoStyle.Render("Model:") + fmt.Sprintf(" %s", model))
+	log.Println(utils.InfoStyle.Render("Tokens Used:") + fmt.Sprintf(" %d", tokensUsed))
+	log.Println(utils.SuccessStyle.Render("Response Status:") + fmt.Sprintf(" %d", statusCode))
+	log.Println(utils.InfoStyle.Render("Timestamp:") + fmt.Sprintf(" %s", time.Now().Format(time.RFC3339)))
 
 	if requestBodyJSON, err := json.MarshalIndent(requestBody, "", "    "); err == nil {
-		log.Println(successStyle.Render("Request Body:"))
+		log.Println(utils.SuccessStyle.Render("Request Body:"))
 		log.Println(string(requestBodyJSON))
 	}
 
-	log.Println(successStyle.Render("Response Body:"))
+	log.Println(utils.SuccessStyle.Render("Response Body:"))
 	log.Println(string(responseBody))
-	log.Println(lipglossStyle.Render("--------------------"))
+	log.Println(utils.LipglossStyle.Render("--------------------"))
 }
