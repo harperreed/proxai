@@ -1,6 +1,6 @@
 [tools]
-go = "1.23.2" # Specify the Go version you want to use
-
+go = "1.23.2"            # Specify the Go version you want to use
+golangci-lint = "1.61.0" # Add this line
 
 [tasks.llm_helper_generate_output_txt]
 run = "repo2txt --exclude-dir  public resources node_modules  pb_data vendor --ignore-files package-lock.json reader spec.md go.sum  rss_reader.db rss_reader.db-journal  --ignore-types .db"
@@ -15,6 +15,10 @@ description = 'Run all tests, including code tests and race condition tests'
 build = "go build -o reader cmd/main.go"
 code_test = "go test -v -parallel 4 ./... -coverprofile=coverage.out -covermode=atomic"
 code_race_condition_test = "go test -parallel 4 -race -v ./..."
+lint = "golangci-lint run"
+lint-fix = "golangci-lint run --fix"
+lint-all = "golangci-lint run --enable-all"
+lint-all-fix = "golangci-lint run --enable-all --fix"
 clean = "go clean && rm -f agent"
 run = "go run cmd/main.go"
 deps = "go get ./... && go mod tidy"
