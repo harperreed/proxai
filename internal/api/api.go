@@ -2,15 +2,17 @@ package api
 
 import (
 	"html/template"
+	"io/ioutil"
 	"net/http"
-	"os"
 
 	"github.com/gomarkdown/markdown"
 )
 
-func HelpHandler(w http.ResponseWriter, r *http.Request) {
+type FileReader func(filename string) ([]byte, error)
+type TemplateParser func(name, text string) (*template.Template, error)
 
-	helpMarkdown, err := os.ReadFile("README.md")
+func HelpHandler(w http.ResponseWriter, r *http.Request, readFile FileReader, parseTemplate TemplateParser) {
+	helpMarkdown, err := readFile("README.md")
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -18,7 +20,7 @@ func HelpHandler(w http.ResponseWriter, r *http.Request) {
 
 	htmlContent := markdown.ToHTML(helpMarkdown, nil, nil)
 
-	tmpl, err := template.New("help").Parse(`
+	tmpl, err := parseTemplate("help", `
 	<!DOCTYPE html>
 	<html lang="en">
 	<head>
@@ -42,4 +44,8 @@ func HelpHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+func DefaultHelpHandler(w http.ResponseWriter, r *http.Request) {
+	HelpHandler(w, r, ioutil.ReadFile, template.New)
 }
