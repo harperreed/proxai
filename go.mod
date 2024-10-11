@@ -1,4 +1,4 @@
-module github.com/harperreed/proxai/cmd/server
+module github.com/harperreed/proxai
 
 go 1.22.1
 
