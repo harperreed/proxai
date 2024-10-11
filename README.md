@@ -145,3 +145,29 @@ Contributions are welcome! If you find any issues or have suggestions for improv
 This project is licensed under the [MIT License](https://github.com/harperreed/proxai/blob/main/LICENSE). Feel free to use, modify, and distribute the code as per the terms of the license.
 
 Happy proxying! 🎉
+
+## Testing 🧪
+
+This project includes unit tests to ensure the reliability of its components. To run the tests, follow these steps:
+
+1. Navigate to the project directory:
+
+    ```sh
+    cd proxai
+    ```
+
+2. Run the tests:
+
+    ```sh
+    go test ./...
+    ```
+
+   This command will run all tests in the project, including the newly added tests in `utils_test.go`.
+
+3. To run tests with verbose output:
+
+    ```sh
+    go test -v ./...
+    ```
+
+The `utils_test.go` file contains tests for the utility functions, including `calculateCost`. These tests cover various scenarios and edge cases to ensure the function works as expected.
